@@ -1,0 +1,412 @@
+<!-- Code from d3-graph-gallery.com -->
+<!DOCTYPE html>
+<meta charset="utf-8">
+
+<!-- Load d3.js -->
+<script src="https://d3js.org/d3.v4.js"></script>
+<script src="https://d3js.org/d3-scale-chromatic.v1.min.js"></script>
+
+<!-- Create a div where the graph will take place -->
+<style =type="text/css">
+    .right {
+    float: right;
+    }
+</style>
+
+<div style="float: left;" id="my_dataviz">
+
+</div>
+<div style="float: left;">
+  <svg style="float: top;" id="my_legend" height=200 width=220></svg>
+  <div style="float: top; margin-left: 33px" id="changeButton"></div>
+</div>
+
+
+
+<script>
+
+// set the dimensions and margins of the graph
+var margin = {top: 30, right: 60, bottom: 30, left: 60},
+  width = 600 - margin.left - margin.right,
+  height = 600 - margin.top - margin.bottom;
+
+// append the svg object to the body of the page
+var svg = d3.select("#my_dataviz")
+  .append("svg")
+  .attr("width", width + margin.left + margin.right)
+  .attr("height", height + margin.top + margin.bottom)
+  .append("g")
+  .attr("transform",
+        "translate(" + margin.left + "," + margin.top + ")");
+        
+
+var month = new Array();
+    month[0] = "January";
+    month[1] = "February";
+    month[2] = "March";
+    month[3] = "April";
+    month[4] = "May";
+    month[5] = "June";
+    month[6] = "July";
+    month[7] = "August";
+    month[8] = "September";
+    month[9] = "October";
+    month[10] = "November";
+    month[11] = "December";
+
+d3.csv("https://raw.githubusercontent.com/HKUST-VISLab/coding-challenge/master/temperature_daily.csv", function(data) {
+    
+
+    
+    //Convert raw data into data format for visualization
+    for(var i = 0; i < data.length; i++){
+        var dateArray = data[i].date.split("-");
+        if(dateArray[0])
+        data[i].year = dateArray[0];
+        data[i].month = month[parseInt(dateArray[1])-1];
+        data[i].day = dateArray[2];
+    }
+    //Filter data by the year list
+    var yearList = ["2012","2013","2014","2015","2016","2017"]
+    data = data.filter(data => yearList.includes(data.year))
+    
+    //Data grouping by year and month
+    var nest = d3.nest().key(function(d) { 
+          return d.year;
+      }).key(function(d) { 
+          return d.month;
+      }).rollup(function(leaves) {
+          return{
+              max:d3.max(leaves,function(d){
+                  return parseInt(d.max_temperature);
+              }),
+              min:d3.min(leaves,function(d){
+                  return parseInt(d.min_temperature);
+              })
+          }
+      }).entries(data);
+      
+     //Convert grouped data(nest) into a data format that good for visualization
+    var result = new Array();
+    for(var i = 0; i < nest.length; i++){
+        for(var j = 0; j < nest[i].values.length; j++){
+            var temp = {"Year":nest[i].key, "Month":nest[i].values[j].key,
+            "Max":nest[i].values[j].value.max,"Min":nest[i].values[j].value.min};
+            result.push(temp);
+        }
+    }
+    
+    //Extract min_temperature and max_temperature, and then group then by month;
+    var tempMin = [];
+    var tempMax = [];
+    var minResult = [];
+    var maxResult = [];
+    for(var i = 0 ; i < data.length; i++){
+        if( i == data.length - 1 ){
+            tempMin.push(data[i].min_temperature);
+            tempMax.push(data[i].max_temperature);
+            minResult.push(tempMin);
+            maxResult.push(tempMax);
+            break;
+        }
+        if( data[i].month == data[i+1].month ){
+            tempMin.push(data[i].min_temperature);
+            tempMax.push(data[i].max_temperature);
+        }else {
+            tempMin.push(data[i].min_temperature);
+            tempMax.push(data[i].max_temperature);
+            minResult.push(tempMin);
+            maxResult.push(tempMax);
+            tempMin = [];
+            tempMax = [];
+        }
+    }
+    tempMax = null, tempMin = null;
+    
+    //Add the Extraction to the result;
+    for(var i = 0; i < result.length; i++){
+        Object.assign(result[i],{"maxData":maxResult[i]});
+        Object.assign(result[i],{"minData":minResult[i]});
+    }
+    maxResult = null, minResult = null;
+    
+    //Find the unique year list
+    var myYear = d3.map(nest, function(d){return d.key;}).keys()
+    //Find the unique month list
+    var myMonth = d3.map(nest[0].values, function(d){return d.key}).keys()
+    nest = null;
+    
+    // Build X scales and axis:
+    var x = d3.scaleBand()
+      .range([ 0, width ])
+      .domain(myYear)
+      .padding(0.1);
+      
+    svg.append("g")
+      .attr("transform", "translate(0," + height + ")")
+      .call(d3.axisBottom(x))
+
+
+    // Build Y scales and axis:
+    var y = d3.scaleBand()
+      .range([ height, 0 ])
+      .domain(myMonth)
+      .padding(0.1);
+      
+    svg.append("g")
+      .call(d3.axisLeft(y));
+      
+    // Build color scale
+    var myColor = d3.scaleLinear()
+      .range(["blue", "red"])
+      .domain([0,40])
+    
+    //Create heatmap
+    var heatmap = svg.selectAll("heatmap")
+           .data(result, function(d) {return d.Year+':'+d.Month;})
+           .enter()
+           .append("rect")
+           .attr("x", function(d) { return x(d.Year) })
+           .attr("y", function(d) { return y(d.Month) })
+           .attr("width", x.bandwidth() )
+           .attr("height", y.bandwidth() )
+           .style("fill", function(d) { return myColor(d.Min)} )
+
+         
+    //Create max_temperature polylines
+    var maxPoly = svg.selectAll("maxPolyLines")
+            .data(result, function(d) {return d.Year+':'+d.Month;} )
+            .enter()
+            .append("polyline")
+            .attr("x", function(d) { return x(d.Year) } )
+            .attr("y", function(d) { return y(d.Month)} )
+            .attr("width", x.bandwidth())
+            .attr("height", y.bandwidth())
+            .attr('points', function(d){ 
+                var xCoordinate = x(d.Year);
+                var yCoordinate = y(d.Month);
+                var width = x.bandwidth();
+                var height = y.bandwidth();
+                var maxDataList = d.maxData
+                var allpoints = "";
+                var xMargin = width / 31.0;
+                var yMargin = height / 40.0;
+                for(var i = 0; i < maxDataList.length; i ++){
+                    allpoints += (xCoordinate + i*xMargin)+","+(yCoordinate + height - maxDataList[i]*yMargin)+" ";
+                }
+                return allpoints})
+            .style('fill', 'none')
+            .style('stroke', '#00FF00')
+            .style('stroke-width', 1);
+    
+    //Create min_temperature polylines
+        var minPoly = svg.selectAll("minPolyLines")
+            .data(result, function(d) {return d.Year+':'+d.Month;} )
+            .enter()
+            .append("polyline")
+            .attr("x", function(d) { return x(d.Year) } )
+            .attr("y", function(d) { return y(d.Month)} )
+            .attr("width", x.bandwidth())
+            .attr("height", y.bandwidth())
+            .attr('points', function(d){ 
+                var xCoordinate = x(d.Year);
+                var yCoordinate = y(d.Month);
+                var width = x.bandwidth();
+                var height = y.bandwidth();
+                var minDataList = d.minData
+                var allpoints = "";
+                var xMargin = width / 31.0;
+                var yMargin = height / 40.0;
+                for(var i = 0; i < minDataList.length; i ++){
+                    allpoints += (xCoordinate + i*xMargin)+","+(yCoordinate + height - minDataList[i]*yMargin)+" ";
+                }
+                return allpoints})
+            .style('fill', 'none')
+            .style('stroke', '#00FFF0')
+            .style('stroke-width', 1);
+    
+    
+    //Build selected buttons
+    var allGroup = ["Min", "Max"];
+    
+    var dropdownButton = d3.select("#changeButton")
+        .append('select')
+        
+    dropdownButton
+        .selectAll('myOptions')
+            .data(allGroup)
+        .enter()
+            .append('option')
+        .text(function (d) { return d;})
+        .attr("value", function(d) { return d;})
+        
+    function updateChart(parameter, result) {
+        if(parameter=="Max"){
+            svg.selectAll()
+               .data(result, function(d) {return d.Year+':'+d.Month;})
+               .enter()
+               .append("rect")
+               .attr("x", function(d) { return x(d.Year) })
+               .attr("y", function(d) { return y(d.Month) })
+               .attr("width", x.bandwidth() )
+               .attr("height", y.bandwidth() )
+               .style("fill", function(d) { return myColor(d.Max)} )
+             .on("mouseover", mouseover)
+             .on("mousemove", mousemove)
+             .on("mouseleave", mouseleave)
+        }
+        else{
+            svg.selectAll()
+               .data(result, function(d) {return d.Year+':'+d.Month;})
+               .enter()
+               .append("rect")
+               .attr("x", function(d) { return x(d.Year) })
+               .attr("y", function(d) { return y(d.Month) })
+               .attr("width", x.bandwidth() )
+               .attr("height", y.bandwidth() )
+               .style("fill", function(d) { return myColor(d.Min)} )
+             .on("mouseover", mouseover)
+             .on("mousemove", mousemove)
+             .on("mouseleave", mouseleave)
+        }
+        var maxPoly = svg.selectAll("maxPolyLines")
+            .data(result, function(d) {return d.Year+':'+d.Month;} )
+            .enter()
+            .append("polyline")
+            .attr("x", function(d) { return x(d.Year) } )
+            .attr("y", function(d) { return y(d.Month)} )
+            .attr("width", x.bandwidth())
+            .attr("height", y.bandwidth())
+            .attr('points', function(d){ 
+                var xCoordinate = x(d.Year);
+                var yCoordinate = y(d.Month);
+                var width = x.bandwidth();
+                var height = y.bandwidth();
+                var maxDataList = d.maxData
+                var allpoints = "";
+                var xMargin = width / maxDataList.length;
+                var yMargin = height / 40.0;
+                for(var i = 0; i < maxDataList.length; i ++){
+                    allpoints += (xCoordinate + i*xMargin)+","+(yCoordinate + height - maxDataList[i]*yMargin)+" ";
+                }
+                return allpoints})
+            .style('fill', 'none')
+            .style('stroke', '#00FF00')
+            .style('stroke-width', 1);
+    
+        var minPoly = svg.selectAll("minPolyLines")
+            .data(result, function(d) {return d.Year+':'+d.Month;} )
+            .enter()
+            .append("polyline")
+            .attr("x", function(d) { return x(d.Year) } )
+            .attr("y", function(d) { return y(d.Month)} )
+            .attr("width", x.bandwidth())
+            .attr("height", y.bandwidth())
+            .attr('points', function(d){ 
+                var xCoordinate = x(d.Year);
+                var yCoordinate = y(d.Month);
+                var width = x.bandwidth();
+                var height = y.bandwidth();
+                var minDataList = d.minData
+                var allpoints = "";
+                var xMargin = width / minDataList.length;
+                var yMargin = height / 40.0;
+                for(var i = 0; i < minDataList.length; i ++){
+                    allpoints += (xCoordinate + i*xMargin)+","+(yCoordinate + height - minDataList[i]*yMargin)+" ";
+                }
+                return allpoints})
+            .style('fill', 'none')
+            .style('stroke', '#00FFF0')
+            .style('stroke-width', 1);
+    }
+    
+    dropdownButton.on("change", function(d) {
+        var selectedOption = d3.select(this).property("value");
+        
+        updateChart(selectedOption, result)
+    })
+    
+    //Tooltip for each matrix view
+    var Tooltip = d3.select("#my_dataviz")
+        .append("div")
+        .style("opacity", 0)
+        .style("position","absolute")
+        .attr("class", "tooltip")
+        .style("background-color", "white")
+        .style("border", "solid")
+        .style("border-width", "2px")
+        .style("border-radius", "5px")
+        .style("padding", "5px")
+        .style("font-size", "5px")
+    
+    var mouseover = function(d) {
+        Tooltip
+            .style("opacity", 1)
+          d3.select(this)
+            .style("stroke", "black")
+            .style("opacity", 1)
+    }
+    var mousemove = function(d) {
+        Tooltip
+            .html("Date: "+ d.Year + ", " + d.Month + "<br>" + "Max: " + d.Max + "<br>" + "Min: " + d.Min)
+            .style("left", (d3.mouse(this)[0]+120) + "px")
+            .style("top", (d3.mouse(this)[1]) + "px")
+    }
+    var mouseleave = function(d) {
+        Tooltip
+            .style("opacity", 0)
+          d3.select(this)
+            .style("stroke", "none")
+            .style("opacity", 0.8)
+            .style("width")
+    }
+    
+    heatmap
+         .on("mouseover", mouseover)
+         .on("mousemove", mousemove)
+         .on("mouseleave", mouseleave);
+    
+    //Create color legend
+    var Legend = d3.select("#my_legend")
+    
+    // create a list of keys
+    var keys = ["#FF0000", "#FF3333", "#FF6666", "#3333FF","#0000FF"]
+    
+    // Usually you have a color scale in your chart already
+    var color = d3.scaleOrdinal()
+      .domain(keys)
+      .range(["#FF0000", "#FF3333", "#FF6666", "#3333FF","#0000FF"]);
+    
+    // Add one dot in the legend for each name.
+    var size = 20
+    Legend.selectAll("mydots")
+      .data(keys)
+      .enter()
+      .append("rect")
+        .attr("x", 40)
+        .attr("y", function(d,i){ return 50 + i*(size+5)}) // 100 is where the first dot appears. 25 is the distance between dots
+        .attr("width", size)
+        .attr("height", size+5)
+        .style("fill", function(d){ return color(d)})
+        
+    var keysLabel = ["40 Celsius", "     ", "      ", "      ", "0 Celsius"]
+    // Usually you have a color scale in your chart already
+    var colorLabel = d3.scaleOrdinal()
+      .domain(keys)
+      .range(["#000000", "#000000", "#000000", "#000000", "#000000"]);
+      
+    Legend.selectAll("mylabels")
+      .data(keysLabel)
+      .enter()
+      .append("text")
+        .attr("x", 40 + size*1.2)
+        .attr("y", function(d,i){ return 50 + i*(size+5) + (size/2)}) // 100 is where the first dot appears. 25 is the distance between dots
+        .style("fill", function(d){ return colorLabel(d)})
+        .text(function(d){ return d})
+        .attr("text-anchor", "left")
+        .style("alignment-baseline", "middle")
+    
+    
+})
+
+</script>
